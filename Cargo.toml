@@ -8,3 +8,4 @@ edition = "2021"
 [dependencies]
 anyhow = "1.0.71"
 libc = "0.2.144"
+thiserror = "1.0.40"

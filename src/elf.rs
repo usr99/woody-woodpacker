@@ -1,7 +1,6 @@
 use std::mem::size_of;
-
-use anyhow::{Result, anyhow};
-use libc::{Elf64_Ehdr, Elf64_Phdr};
+use thiserror::Error;
+use libc::{Elf64_Ehdr, Elf64_Phdr, Elf64_Shdr};
 
 macro_rules! parse_elf {
 	($elf:expr, $offset:expr, $r#type: ty) => {
@@ -9,80 +8,106 @@ macro_rules! parse_elf {
 	}
 }
 
-pub fn take_elf_header(binary: &[u8]) -> Result<&Elf64_Ehdr> {
-	if binary.len() < size_of::<Elf64_Ehdr>() {
-		return Err(anyhow!("file is too small to contain ELF data"));
+pub struct Elf<'a> {
+	pub ehdr: &'a Elf64_Ehdr,
+	pub phdrtab: &'a [Elf64_Phdr],
+	pub shdrtab: &'a [Elf64_Shdr]
+}
+
+#[derive(Error, Debug)]
+pub enum Error {
+	#[error("ELF magic number doesn't match")]
+	NotAnElf,
+	#[error("only 64-bit executables are supported")]
+	InvalidClass,
+	#[error("only little-endian executables are supported")]
+	InvalidEndianness,
+	#[error("not an executable")]
+	InvalidType,
+	#[error("architecture is not x86_64")]
+	InvalidArchitecture,
+	#[error("corrupted file: offset {0} is out of bounds")]
+	InvalidOffset(usize),
+	#[error("requested entity was not found")]
+	NotFound()
+}
+use Error::*;
+
+pub type Result<T> = std::result::Result<T, Error>;
+
+pub fn parse(file: &[u8]) -> Result<Elf> {
+	if file.len() < size_of::<Elf64_Ehdr>() {
+		return Err(NotAnElf);
 	}
 
-	let ehdr = parse_elf!(binary, 0, Elf64_Ehdr);
-	validate_elf_header(ehdr)?;
+	let ehdr = parse_elf!(file, 0, Elf64_Ehdr);
+	validate_elf_header(ehdr)?;	
 
-	Ok(ehdr)
+	let offset = ehdr.e_phoff as usize;
+	bound_check(offset + (ehdr.e_phentsize * ehdr.e_phnum) as usize, file.len())?;
+	let phdrtab = unsafe {
+		std::slice::from_raw_parts(
+			file.as_ptr().add(offset) as *const Elf64_Phdr,
+			ehdr.e_phnum as usize
+		)
+	};
+	for phdr in phdrtab {
+		bound_check((phdr.p_offset + phdr.p_filesz) as usize, file.len())?;
+	}
+
+	let offset = ehdr.e_shoff as usize;
+	bound_check(offset + (ehdr.e_shentsize * ehdr.e_shnum) as usize, file.len())?;
+	let shdrtab = unsafe {
+		std::slice::from_raw_parts(
+			file.as_ptr().add(offset) as *const Elf64_Shdr,
+			ehdr.e_shnum as usize
+		)
+	};
+	for shdr in shdrtab {
+		bound_check((shdr.sh_offset + shdr.sh_size) as usize, file.len())?;
+	}
+
+	Ok(Elf { ehdr, phdrtab, shdrtab })
 }
 
 fn validate_elf_header(ehdr: &Elf64_Ehdr) -> Result<()> {
 	let magic = parse_elf!(ehdr.e_ident, 0, u32);
 	if *magic != 0x464c457f { // ELF Magic Number
-		return Err(anyhow!("not an ELF file"));
+		return Err(NotAnElf);
 	}
 
 	if ehdr.e_ident[libc::EI_CLASS] != libc::ELFCLASS64 {
-		return Err(anyhow!("not a 64-bit executable"));
+		return Err(InvalidClass);
 	}
 
 	if ehdr.e_ident[libc::EI_DATA] != libc::ELFDATA2LSB {
-		return Err(anyhow!("not a little-endian executable"));
-	}
-
-	if ehdr.e_type == libc::ET_DYN {
-		return Err(anyhow!("shared objects are not currently supported"));
+		return Err(InvalidEndianness);
 	}
 
 	if ehdr.e_type != libc::ET_EXEC {
-		return Err(anyhow!("not an executable file"));
+		return Err(InvalidType);
 	}
 
 	if ehdr.e_machine != libc::EM_X86_64 {
-		return Err(anyhow!("x86_64 is the only architecture supported"));
+		return Err(InvalidArchitecture);
 	}
 
 	Ok(())
 }
 
-pub fn take_exec_program_header<'a>(ehdr: &Elf64_Ehdr, data: &'a [u8]) -> Result<&'a Elf64_Phdr> {
-	let mut offset = ehdr.e_phoff as usize;
-	let phdrtab_size = (ehdr.e_phentsize * ehdr.e_phnum) as usize;
-	let phdrtab_end = offset + phdrtab_size;
-	if phdrtab_end > data.len() {
-		return Err(anyhow!("invalid offset: program table header"));
+fn bound_check(offset: usize, max: usize) -> Result<()> {
+	if offset > max {
+		Err(InvalidOffset(offset))
+	} else {
+		Ok(())
 	}
-
-	while offset < phdrtab_end {
-		let phdr = parse_elf!(data, ehdr.e_phoff, Elf64_Phdr);
-		if validate_exec_phdr(phdr, data.len()) {
-			return Ok(phdr);
-		}
-
-		offset += ehdr.e_phentsize as usize;
-	}
-
-	Err(anyhow!("ELF binary does not contain any executable segment"))
 }
 
-fn validate_exec_phdr(phdr: &Elf64_Phdr, datalen: usize) -> bool {
-	if phdr.p_type != libc::PT_LOAD {
-		return false;
-	}		
-
-	if phdr.p_flags & libc::PF_X != 1 {
-		return false;
-	}
-
-	let segment_end = (phdr.p_offset + phdr.p_filesz) as usize;
-	if segment_end > datalen {
-		return false;
-	}
-
-	true
-}
-
+// 	/*
+// 		Recompute every segment offset in program header table
+// 		Recompute every section offset in section header table
+// 		Recompute program/section header table offset
+// 		Update size of last section in xphdr
+// 		Update xphdr file/mem size
+// 		Update entrypoint
+// 	*/
