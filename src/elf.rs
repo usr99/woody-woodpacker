@@ -102,12 +102,3 @@ fn bound_check(offset: usize, max: usize) -> Result<()> {
 		Ok(())
 	}
 }
-
-// 	/*
-// 		Recompute every segment offset in program header table
-// 		Recompute every section offset in section header table
-// 		Recompute program/section header table offset
-// 		Update size of last section in xphdr
-// 		Update xphdr file/mem size
-// 		Update entrypoint
-// 	*/

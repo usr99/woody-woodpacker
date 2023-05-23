@@ -1,0 +1,42 @@
+use libc::{Elf64_Ehdr, Elf64_Phdr};
+use std::mem::size_of_val;
+
+pub const PACKER_LENGTH: usize = 57;
+const PACKER_INSTR: [u8; PACKER_LENGTH] = [
+	0x48, 0x83, 0xec, 0x0a,			// sub rsp, 10
+	0xbf, 0x01, 0x00, 0x00, 0x00,	// mov rdi, 1
+	0xc6, 0x04, 0x24, 0x57,			// mov 
+	0xc6, 0x44, 0x24, 0x01, 0x4f,
+	0xc6, 0x44, 0x24, 0x02, 0x4f,
+	0xc6, 0x44, 0x24, 0x03, 0x44,
+	0xc6, 0x44, 0x24, 0x04, 0x59,
+	0xc6, 0x44, 0x24, 0x05, 0x0a,
+	0x48, 0x89, 0xe6,				// mov rsi, rsp
+	0xba, 0x06, 0x00, 0x00, 0x00,	// mov rdx, 6
+	0xb8, 0x01, 0x00, 0x00, 0x00,	// mov rax, 1
+	0x0f, 0x05,						// syscall
+	0x48, 0x83, 0xc4, 0x0a			// add rsp, 10
+];
+pub const JMP_LENGTH: usize = 17;
+const JMP_INSTR: [u8; JMP_LENGTH] = [
+	0x48, 0x31, 0xff,				// xor rdi, rdi
+	0x48, 0x31, 0xf6,				// xor rsi, rsi
+	0x48, 0x31, 0xd2,				// xor rdx, rdx
+	0x48, 0x31, 0xc0,				// xor rax, rax
+	0xe9, 0xff, 0xff, 0xff, 0xff	// jmp <entrypoint address> (relative jump 32bit address)
+];
+
+pub fn generate_packer() -> [u8; PACKER_LENGTH] {
+	return PACKER_INSTR;
+}
+
+pub fn generate_jmp(ehdr: &Elf64_Ehdr, xphdr: &Elf64_Phdr) -> [u8; JMP_LENGTH] {
+	let insert_size = (PACKER_LENGTH + JMP_LENGTH) as u64;
+	let reljump32 = -((xphdr.p_vaddr + xphdr.p_memsz + insert_size - ehdr.e_entry) as i32);
+
+	let mut instructions = JMP_INSTR;
+	let address = &mut instructions[JMP_LENGTH - size_of_val(&reljump32)..];
+	address.copy_from_slice(&reljump32.to_le_bytes());
+
+	return instructions;
+}
