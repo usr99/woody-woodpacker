@@ -1,6 +1,6 @@
 use anyhow::{Result, anyhow};
 
-use woody_woodpacker::{map::map_file, elf};
+use woody_woodpacker::{map::map_file, elf::{self, Elf}};
 
 fn main() -> Result<()> {
 	let args: Vec<_> = std::env::args().collect();
@@ -11,7 +11,7 @@ fn main() -> Result<()> {
 	}
 
 	let mut source = map_file(&args[1])?;
-	let elf = elf::parse(&source)?;
+	let elf = elf::parse(&mut source)?;
 
 	let xphdr = match elf.phdrtab.iter().find(|phdr| {
 		phdr.p_type == libc::PT_LOAD && phdr.p_flags & libc::PF_X == 1

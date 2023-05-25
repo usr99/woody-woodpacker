@@ -4,14 +4,14 @@ use libc::{Elf64_Ehdr, Elf64_Phdr, Elf64_Shdr};
 
 macro_rules! parse_elf {
 	($elf:expr, $offset:expr, $r#type: ty) => {
-		unsafe { &*($elf.as_ptr().add($offset as usize) as *const $r#type) }
+		unsafe { &mut *($elf.as_ptr().add($offset as usize) as *mut $r#type) }
 	}
 }
 
 pub struct Elf<'a> {
-	pub ehdr: &'a Elf64_Ehdr,
-	pub phdrtab: &'a [Elf64_Phdr],
-	pub shdrtab: &'a [Elf64_Shdr]
+	pub ehdr: &'a mut Elf64_Ehdr,
+	pub phdrtab: &'a mut [Elf64_Phdr],
+	pub shdrtab: &'a mut [Elf64_Shdr]
 }
 
 #[derive(Error, Debug)]
@@ -35,7 +35,7 @@ use Error::*;
 
 pub type Result<T> = std::result::Result<T, Error>;
 
-pub fn parse(file: &[u8]) -> Result<Elf> {
+pub fn parse(file: &mut [u8]) -> Result<Elf> {
 	if file.len() < size_of::<Elf64_Ehdr>() {
 		return Err(NotAnElf);
 	}
@@ -46,24 +46,24 @@ pub fn parse(file: &[u8]) -> Result<Elf> {
 	let offset = ehdr.e_phoff as usize;
 	bound_check(offset + (ehdr.e_phentsize * ehdr.e_phnum) as usize, file.len())?;
 	let phdrtab = unsafe {
-		std::slice::from_raw_parts(
-			file.as_ptr().add(offset) as *const Elf64_Phdr,
+		std::slice::from_raw_parts_mut(
+			file.as_ptr().add(offset) as *mut Elf64_Phdr,
 			ehdr.e_phnum as usize
 		)
 	};
-	for phdr in phdrtab {
+	for phdr in &mut *phdrtab {
 		bound_check((phdr.p_offset + phdr.p_filesz) as usize, file.len())?;
 	}
 
 	let offset = ehdr.e_shoff as usize;
 	bound_check(offset + (ehdr.e_shentsize * ehdr.e_shnum) as usize, file.len())?;
 	let shdrtab = unsafe {
-		std::slice::from_raw_parts(
-			file.as_ptr().add(offset) as *const Elf64_Shdr,
+		std::slice::from_raw_parts_mut(
+			file.as_ptr().add(offset) as *mut Elf64_Shdr,
 			ehdr.e_shnum as usize
 		)
 	};
-	for shdr in shdrtab {
+	for shdr in &mut *shdrtab {
 		bound_check((shdr.sh_offset + shdr.sh_size) as usize, file.len())?;
 	}
 
