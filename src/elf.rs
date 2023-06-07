@@ -84,7 +84,7 @@ fn validate_elf_header(ehdr: &Elf64_Ehdr) -> Result<()> {
 		return Err(InvalidEndianness);
 	}
 
-	if ehdr.e_type != libc::ET_EXEC {
+	if ehdr.e_type != libc::ET_EXEC && ehdr.e_type != libc::ET_DYN || ehdr.e_entry == 0 {
 		return Err(InvalidType);
 	}
 
