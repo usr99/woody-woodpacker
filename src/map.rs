@@ -27,10 +27,7 @@ impl<'a> Drop for Mapping<'a> {
 }
 
 pub fn map_file(path: &str) -> Result<Mapping> {
-	let file = fs::OpenOptions::new()
-		.read(true)
-		.write(true)
-		.open(path)?;
+	let file = fs::File::open(path)?;
 	let filesize = file.metadata()?.len() as usize;
 
 	unsafe {
