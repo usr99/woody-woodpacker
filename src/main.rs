@@ -40,7 +40,7 @@ fn main() -> Result<()> {
 	let pagesize = unsafe { libc::sysconf(libc::_SC_PAGESIZE) as u64 };
 
 	/* Update every offset after insertion */
-	elf.ehdr.e_entry += xphdr.p_filesz;
+	elf.ehdr.e_entry = xphdr.p_offset + xphdr.p_filesz;
 	xphdr.p_filesz += pagesize;
 	xphdr.p_memsz += pagesize;
 	update_offset!(elf.ehdr.e_phoff, insert_off, pagesize);
