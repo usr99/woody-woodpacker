@@ -41,7 +41,7 @@ pub fn parse(file: &mut [u8]) -> Result<Elf> {
 	}
 
 	let ehdr = parse_elf!(file, 0, Elf64_Ehdr);
-	validate_elf_header(ehdr)?;	
+	validate_elf_header(ehdr)?;
 
 	let offset = ehdr.e_phoff as usize;
 	bound_check(offset + (ehdr.e_phentsize * ehdr.e_phnum) as usize, file.len())?;
@@ -51,9 +51,6 @@ pub fn parse(file: &mut [u8]) -> Result<Elf> {
 			ehdr.e_phnum as usize
 		)
 	};
-	for phdr in &mut *phdrtab {
-		bound_check((phdr.p_offset + phdr.p_filesz) as usize, file.len())?;
-	}
 
 	let offset = ehdr.e_shoff as usize;
 	bound_check(offset + (ehdr.e_shentsize * ehdr.e_shnum) as usize, file.len())?;
@@ -63,9 +60,6 @@ pub fn parse(file: &mut [u8]) -> Result<Elf> {
 			ehdr.e_shnum as usize
 		)
 	};
-	for shdr in &mut *shdrtab {
-		bound_check((shdr.sh_offset + shdr.sh_size) as usize, file.len())?;
-	}
 
 	Ok(Elf { ehdr, phdrtab, shdrtab })
 }
