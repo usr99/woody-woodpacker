@@ -14,6 +14,10 @@ macro_rules! update_offset {
 	}
 }
 
+extern "C" {
+	fn xor_cipher(buf: *mut u8, len: usize);
+}
+
 fn main() -> Result<()> {
 	let args: Vec<_> = std::env::args().collect();
 	if args.len() > 2 {
@@ -28,6 +32,10 @@ fn main() -> Result<()> {
 		Some(exec_segment) => exec_segment,
 		None => return Err(anyhow!("no executable segment found"))
 	};
+
+	// unsafe {
+	// 	xor_cipher(source.as_mut_ptr().add(xphdr.p_offset as usize), xphdr.p_filesz as usize);
+	// }
 
 	let packer = packer::generate_packer();
 	let jmp = packer::generate_jmp(elf.ehdr, xphdr);
