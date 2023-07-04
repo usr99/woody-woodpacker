@@ -8,12 +8,6 @@ macro_rules! parse_elf {
 	}
 }
 
-pub struct Elf<'a> {
-	pub ehdr: &'a mut Elf64_Ehdr,
-	pub phdrtab: &'a mut [Elf64_Phdr],
-	pub shdrtab: &'a mut [Elf64_Shdr]
-}
-
 #[derive(Error, Debug)]
 pub enum Error {
 	#[error("ELF magic number doesn't match")]
@@ -35,33 +29,29 @@ use Error::*;
 
 pub type Result<T> = std::result::Result<T, Error>;
 
-pub fn parse(file: &mut [u8]) -> Result<Elf> {
-	if file.len() < size_of::<Elf64_Ehdr>() {
+pub fn fetch_headers(elf: &mut [u8]) -> Result<(&mut Elf64_Ehdr, &mut [Elf64_Phdr], &mut [Elf64_Shdr])> {
+	if elf.len() < size_of::<Elf64_Ehdr>() {
 		return Err(NotAnElf);
 	}
-
-	let ehdr = parse_elf!(file, 0, Elf64_Ehdr);
+	
+	let ehdr = unsafe { &mut *(elf.as_mut_ptr() as *mut Elf64_Ehdr) };
 	validate_elf_header(ehdr)?;
+	
+	bound_check(ehdr.e_shoff as usize + (ehdr.e_phentsize * ehdr.e_phnum) as usize, elf.len())?;
+	let phdr = unsafe { std::slice::from_raw_parts_mut(
+		elf.as_mut_ptr().add(ehdr.e_phoff as usize) as *mut Elf64_Phdr,
+		ehdr.e_phnum as usize) };
+	
+	bound_check(ehdr.e_shoff as usize + (ehdr.e_shentsize * ehdr.e_shnum) as usize, elf.len())?;
+	let shdr = unsafe { std::slice::from_raw_parts_mut(
+		elf.as_mut_ptr().add(ehdr.e_shoff as usize) as *mut Elf64_Shdr,
+		ehdr.e_shnum as usize) };
 
-	let offset = ehdr.e_phoff as usize;
-	bound_check(offset + (ehdr.e_phentsize * ehdr.e_phnum) as usize, file.len())?;
-	let phdrtab = unsafe {
-		std::slice::from_raw_parts_mut(
-			file.as_ptr().add(offset) as *mut Elf64_Phdr,
-			ehdr.e_phnum as usize
-		)
-	};
+	Ok((ehdr, phdr, shdr))
+}
 
-	let offset = ehdr.e_shoff as usize;
-	bound_check(offset + (ehdr.e_shentsize * ehdr.e_shnum) as usize, file.len())?;
-	let shdrtab = unsafe {
-		std::slice::from_raw_parts_mut(
-			file.as_ptr().add(offset) as *mut Elf64_Shdr,
-			ehdr.e_shnum as usize
-		)
-	};
-
-	Ok(Elf { ehdr, phdrtab, shdrtab })
+pub fn is_exec_segment(phdr: &Elf64_Phdr) -> bool {
+	phdr.p_type == libc::PT_LOAD && phdr.p_flags & libc::PF_X == 1
 }
 
 fn validate_elf_header(ehdr: &Elf64_Ehdr) -> Result<()> {
