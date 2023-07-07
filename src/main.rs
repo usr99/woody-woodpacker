@@ -32,10 +32,6 @@ fn main() -> Result<()> {
 		None => return Err(anyhow!("no executable segment found"))
 	};
 
-	// unsafe {
-		// xor_cipher(source.as_mut_ptr().add(xphdr.p_offset as usize), xphdr.p_filesz as usize);
-	// }
-
 	let packer = packer::generate_packer();
 	let jmp = packer::generate_jmp(ehdr, xphdr);
 
@@ -47,12 +43,9 @@ fn main() -> Result<()> {
 	let insert_off = xphdr.p_offset + xphdr.p_filesz;
 	let pagesize = unsafe { libc::sysconf(libc::_SC_PAGESIZE) as u64 };
 
-/*
-	  vaddr								       parasite
-		|-----------|-------------------|-------------------|
-	   off        entry             off + size
-									new entry
- */
+	/* Save xphdr values before dropping all references to subslices of source */
+	let cipher_off = xphdr.p_offset as usize;
+	let cipher_len = xphdr.p_filesz as usize;
 
 	/* Update every offset after insertion */
 	ehdr.e_entry = xphdr.p_vaddr + xphdr.p_filesz;
@@ -69,6 +62,10 @@ fn main() -> Result<()> {
 			header.sh_size += pagesize;
 		}
 	});
+
+	/* Obfuscate executable segment */
+	let exec_segment_data = &mut source[cipher_off..][..cipher_len];
+	unsafe { xor_cipher(exec_segment_data.as_mut_ptr(), exec_segment_data.len()); }
 
 	/* Create woody program with same permissions */
 	let mut woody = fs::File::create("woody")?;
