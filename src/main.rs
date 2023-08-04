@@ -32,8 +32,7 @@ fn main() -> Result<()> {
 		None => return Err(anyhow!("no executable segment found"))
 	};
 
-	let packer = packer::generate_packer();
-	let jmp = packer::generate_jmp(ehdr, xphdr);
+	let packer = packer::generate_packer(ehdr, xphdr);
 
 	/*
 		if code cave -> increase offset by insertion size
@@ -51,6 +50,7 @@ fn main() -> Result<()> {
 	ehdr.e_entry = xphdr.p_vaddr + xphdr.p_filesz;
 	xphdr.p_filesz += pagesize;
 	xphdr.p_memsz += pagesize;
+	xphdr.p_flags |= libc::PF_W;
 	update_offset!(ehdr.e_phoff, insert_off, pagesize);
 	update_offset!(ehdr.e_shoff, insert_off, pagesize);
 	phdrtab.iter_mut().for_each(|header| {
@@ -75,12 +75,11 @@ fn main() -> Result<()> {
 
 	/* Write packed executable */
 	let insert = insert_off as usize;
-	let padsize = pagesize as usize - packer.len() - jmp.len();
+	let padsize = pagesize as usize - packer.len();
 	let padding = vec![0; padsize];
 
 	woody.write_all(&source[..insert])?;
 	woody.write_all(&packer)?;
-	woody.write_all(&jmp)?;
 	woody.write_all(&padding)?;
 	woody.write_all(&source[insert..])?;
 
