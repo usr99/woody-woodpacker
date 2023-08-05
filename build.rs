@@ -24,7 +24,6 @@ fn main() {
 		.arg("-rc")
 		.arg(lib)
 		.arg(obj)
-		.args(["-o", format!("{}/xor.o", env::var("OUT_DIR").unwrap()).as_str()])
         .output()
         .expect("could not compile assembly module")
         .status
